@@ -11,7 +11,10 @@ NC='\033[0m'
 
 CONFIG_FILE="./config.env"
 
-# ========= 1. CARREGAR CONFIGURAÇÕES PRÉVIAS =========
+# Sempre cria o array primeiro (garantido)
+declare -g -A DISCO_LIMITS=()
+
+# Depois carrega config (se existir)
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
@@ -37,56 +40,152 @@ save_config() {
     
     local client_script="$REPO_MASTER/setup_client.sh"
 
-    {
+    # Salva o arquivo de configuração do Mirror
+   {
         echo "# Arquivo Gerado Automaticamente - $(date)"
         echo "RAIZ=\"$RAIZ\""
-        echo "DESTINO_SYNC=\"${DESTINO_SYNC:-}\""
         echo "MAX_ALLOWED_GB=\"$MAX_ALLOWED_GB\""
         echo "FILTRO_IGNORAR=\"$FILTRO_IGNORAR\""
         echo "LANG_FILTER=\"$LANG_FILTER\""
         echo "THREADS=\"$THREADS\""
         echo "SERVER_IP=\"$SERVER_IP\""
         echo "FORCAR_LOCAL=\"${FORCAR_LOCAL:-false}\""
+        
+        # --- A MÁGICA DOS DISCOS ---
+        # Verifica se o array tem conteúdo antes de tentar percorrer
+        if [ ${#DISCO_LIMITS[@]} -gt 0 ]; then
+            for d in "${!DISCO_LIMITS[@]}"; do
+                # Grava a linha formatada para o config.env
+                echo "DISCO_LIMITS[\"$d\"]=\"${DISCO_LIMITS[$d]}\""
+            done
+        fi
     } > "$CONFIG_FILE"
 
-    # Gerador de Instalador simplificado para os clientes
+    # Define a flag de visibilidade para o Flatpak
+    # Se FORCAR_LOCAL for true, --no-enumerate=false (aparece sempre)
+    # Se for false, --no-enumerate=true (esconde se estiver offline/lento)
+    local enum_flag="true"
+    [[ "$FORCAR_LOCAL" == "true" ]] && enum_flag="false"
+
+    # Gerador de Instalador Robusto para os Clientes (PCs dos meninos)
     {
         echo "#!/bin/bash"
         echo "SERVER_IP=\"$SERVER_IP\""
+        echo "ENUM_FLAG=\"$enum_flag\""
         cat << 'EOF'
-echo "🔧 Configurando repositório local..."
+echo "==========================================="
+echo "  🔧 CONFIGURANDO REPOSITÓRIO LOCAL"
+echo "==========================================="
+
+# 1. Adiciona o remoto
 sudo flatpak remote-add --if-not-exists --no-gpg-verify local-master "http://$SERVER_IP:8080"
-sudo flatpak remote-modify --priority=99 local-master
-echo "✅ Concluído!"
+
+# 2. Configura Prioridade e Visibilidade
+# --no-enumerate=false força a exibição na Gnome Software/Discover
+sudo flatpak remote-modify --priority=99 --no-enumerate=$ENUM_FLAG local-master
+
+echo "✅ Concluído! O PC agora prioriza o Mirror Local."
+echo "URL: http://$SERVER_IP:8080"
+echo "==========================================="
 EOF
     } > "$client_script"
     chmod +x "$client_script"
 }
 
+## ========= FUNÇÃO DE CONFIGURAÇÃO DE DISCOS EXTRAS =========
+configure_disks_loop() {
+    echo -e "\n${BLUE}💿 Configuração do Disco de Destino (HD Externo)${NC}"
+    
+    # Pega o primeiro disco já salvo (se existir) para sugerir como padrão
+    local disco_atual=""
+    local gb_atual="50"
+    
+    if [ ${#DISCO_LIMITS[@]} -gt 0 ]; then
+        disco_atual="${!DISCO_LIMITS[@]}"
+        gb_atual="${DISCO_LIMITS[$disco_atual]}"
+        echo -e "${YELLOW}ℹ️  HD atual: $disco_atual ($gb_atual GB)${NC}"
+    fi
+
+    echo "Insira o caminho do HD (Exemplo: /home/$(whoami)/DISCOS/DISCO1)"
+    read -p "📍 Caminho do Disco [${disco_atual:-Pular}]: " d_path
+    
+    # Se der Enter e já existir um, mantém. Se não existir, pula.
+    d_path=${d_path:-$disco_atual}
+    
+    if [ -n "$d_path" ]; then
+        if [ -d "$d_path" ]; then
+            read -p "📏 Limite de GB para este HD [$gb_atual]: " input_gb
+            local d_gb=$(echo "$input_gb" | tr -dc '0-9')
+            d_gb=${d_gb:-$gb_atual}
+
+            # Limpa o array e adiciona APENAS este disco
+            unset DISCO_LIMITS
+            declare -g -A DISCO_LIMITS
+            DISCO_LIMITS["$d_path"]=$d_gb
+            
+            echo -e "${GREEN}✅ HD Configurado: $d_path ($d_gb GB)${NC}"
+        else
+            echo -e "${RED}❌ Caminho não encontrado! O HD está montado?${NC}"
+            # Opcional: Se errar, podemos limpar para não usar caminho fantasma
+            unset DISCO_LIMITS
+            declare -g -A DISCO_LIMITS
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Nenhum HD extra configurado. Usando apenas a Pasta Raiz.${NC}"
+        unset DISCO_LIMITS
+        declare -g -A DISCO_LIMITS
+    fi
+}
+
 # ========= 4. CONFIGURAÇÃO INTERATIVA =========
 ask_configs() {
-    echo -e "${YELLOW}=== CONFIGURAÇÃO DO ESPELHO FLATPAK ===${NC}"
+    echo -e "${YELLOW}=== CONFIGURAÇÃO DO ESPELHO FLATPAK (MODO DIRETO) ===${NC}"
     
-    local def_raiz=${RAIZ:-/home/gustavo/Flatpak}
-    read -p "📂 Pasta de Trabalho (Download) [$def_raiz]: " input_raiz
+    # Pega o usuário logado
+    local user=$(whoami)
+    
+    # Sugere a pasta Raiz DIRETAMENTE no seu HD de Sarzedo (ou onde você preferir)
+    local def_raiz=${RAIZ:-/media/$user/DISCO1/Flatpak_Mirror}
+    read -p "📂 Onde salvar o Espelho (HD Externo) [$def_raiz]: " input_raiz
     RAIZ=${input_raiz:-$def_raiz}
     mkdir -p "$RAIZ"
 
-    local def_limit=${MAX_ALLOWED_GB:-50}
-    read -p "🛑 Limite total de armazenamento (GB) [$def_limit]: " input_limit
-    MAX_ALLOWED_GB=${input_limit:-$def_limit}
+    # Agora o limite é baseado apenas nesta pasta
+    local def_max=${MAX_ALLOWED_GB:-100}
+    read -p "⚖️ Limite de Espaço no HD (GB) [${def_max}GB]: " input_max
+    MAX_ALLOWED_GB=${input_max:-$def_max}
+    # ------------------------------
+    # Filtro Ignorar
+    local def_ignore=${FILTRO_IGNORAR:-"(Debug|Sources)"}
+    read -p "🚫 Ignorar (Regex) [$def_ignore]: " input_ignore
+    FILTRO_IGNORAR=${input_ignore:-$def_ignore}
 
-    local def_dest=${DESTINO_SYNC:-/home/gustavo/DISCOS/DISCO1}
-    read -p "💿 Pasta de Destino (Sincronização) [$def_dest]: " input_dest
-    DESTINO_SYNC=${input_dest:-$def_dest}
+    # Idiomas (RESTAURADO)
+    local def_lang=${LANG_FILTER:-"(\.pt|pt_BR|pt-BR|\.en|en_US|en_GB)"}
+    read -p "🌎 Idiomas (Regex) [$def_lang]: " input_lang
+    LANG_FILTER=${input_lang:-$def_lang}
 
+    # Threads
     local def_threads=${THREADS:-4}
     read -p "⚡ Threads [$def_threads]: " input_threads
     THREADS=${input_threads:-$def_threads}
 
-    FILTRO_IGNORAR=${FILTRO_IGNORAR:-"(Debug|Sources)"}
-    LANG_FILTER=${LANG_FILTER:-"(\.pt|pt_BR|pt-BR)"}
-    FORCAR_LOCAL=${FORCAR_LOCAL:-"false"}
+    # Calcula e mostra o total somado para conferência
+    local total_cfg=0
+    for d in "${!DISCO_LIMITS[@]}"; do total_cfg=$((total_cfg + DISCO_LIMITS[$d])); done
+    echo -e "${CYAN}📦 Total de armazenamento configurado: ${total_cfg}GB${NC}"
+
+    # --- VISIBILIDADE DA LOJA (RESTAURADO) ---
+    echo -e "\n${YELLOW}🛠️  Visibilidade da Loja:${NC}"
+    echo "Deseja forçar os clientes a aguardarem o sincronismo com a loja local?"
+    echo "  [s] Sim: Apps locais aparecem sempre (mesmo offline)."
+    echo "  [n] Não: Pula para internet se o servidor cair (Recomendado)."
+    read -p "Escolha (s/n) [n]: " input_enum
+    if [[ "$input_enum" =~ ^[Ss]$ ]]; then 
+        FORCAR_LOCAL="true" 
+    else 
+        FORCAR_LOCAL="false" 
+    fi
 
     save_config
 }
@@ -122,7 +221,7 @@ show_progress() {
             printf "  [Slot %2d]: %-50s\n" "$i" "${task:0:50}"
         done
         echo -e "${BLUE}==========================================================${NC}"
-        sleep 2
+        sleep 1
     done
 }
 
@@ -132,37 +231,29 @@ pull_item() {
     local slot=${PARALLEL_SEQ:-1}
     local thread_file="$LOG_DIR/thread_$slot.txt"
 
-    # 1. CÁLCULO DE ESPAÇO REAL (Soma Master + Discos Extras)
-    local total_kb=$(du -s "$RAIZ" 2>/dev/null | cut -f1 || echo 0)
-    
-    # DISCO_PATHS é exportada pela main() contendo os caminhos dos HDs
-    for d in ${DISCO_PATHS:-}; do
-        if [ -d "$d" ]; then
-            local disco_kb=$(du -s "$d" 2>/dev/null | cut -f1 || echo 0)
-            total_kb=$((total_kb + disco_kb))
-        fi
-    done
+    # 1. ATUALIZA O DASHBOARD IMEDIATAMENTE (Limpa o "Sucesso" anterior)
+    # Mostra apenas o final do nome do app para caber na tela
+    echo "⬇️ Baixando: ${ref: -35}" > "$thread_file"
 
-    local total_gb=$((total_kb / 1024 / 1024))
+    # 2. Cálculo de espaço (Foco na RAIZ/HD)
+    local current_kb=$(du -s "$RAIZ" 2>/dev/null | cut -f1 || echo 0)
+    local current_gb=$((current_kb / 1024 / 1024))
 
-    # 2. TRAVA DE SEGURANÇA
-    if [ "$total_gb" -ge "${MAX_ALLOWED_GB:-1}" ]; then
-        echo "🛑 LIMITE ATINGIDO!" > "$thread_file"
-        touch "$LOG_DIR/STOP_ALL"
-        return 1
+    # 3. Checagem de Limite
+    if [ "$current_gb" -ge "$MAX_ALLOWED_GB" ]; then
+        echo "🛑 DISCO CHEIO!" > "$thread_file"
+        touch "$LOG_DIR/ERRO_ESPACO"
+        return 1 
     fi
 
-    # 3. PROCESSO DE DOWNLOAD
-    [ -f "$LOG_DIR/STOP_ALL" ] && return 1
-    echo "⬇️ Baixando: ${ref: -30}" > "$thread_file"
-
+    # 4. Execução do Pull Real
+    # Redirecionamos o log do ostree para não sujar o dashboard
     if ostree pull --repo="$REPO_MASTER" flathub "$ref" --depth=1 >/dev/null 2>&1; then
         inc_progress
-        echo "✅ OK: ${ref: -30}" > "$thread_file"
-        return 0
+        # Marca como sucesso para o usuário ver que terminou este item
+        echo "✅ Concluído: ${ref: -30}" > "$thread_file"
     else
-        inc_progress
-        echo "❌ ERRO: ${ref: -30}" > "$thread_file"
+        echo "❌ FALHA: ${ref: -30}" > "$thread_file"
         return 1
     fi
 }
@@ -216,80 +307,82 @@ main() {
     check_deps  
     ask_configs
 
-    # 1. Definição de Pastas
+    # 1. Definição de Pastas e Variáveis Globais
+    # Agora REPO_MASTER nasce direto dentro do HD que você escolheu na RAIZ
     REPO_MASTER="$RAIZ/ostree-repo-full"
     LOG_DIR="$RAIZ/logs"
     mkdir -p "$LOG_DIR"
+    mkdir -p "$REPO_MASTER"
 
-    # --- AUTO-RESET ---
+    # Exportamos apenas o necessário para o Parallel
+    # Removi DISCO_PATHS pois agora o pull_item só olha para RAIZ
+    export MAX_ALLOWED_GB REPO_MASTER LOG_DIR RAIZ FORCAR_LOCAL LANG_FILTER
+
+    # --- AUTO-RESET DE LOGS ---
     echo -e "${YELLOW}🧹 Preparando ambiente...${NC}"
-    rm -f "$LOG_DIR/STOP_ALL"  
+    rm -f "$LOG_DIR/STOP_ALL" "$LOG_DIR/ERRO_ESPACO"
     rm -f "$LOG_DIR/thread_*.txt" 
     echo "0" > "$LOG_DIR/progress.count"
 
     # 2. Arquivos Temporários para a Peneira
     local all="$LOG_DIR/all.txt"
-    local filtered_tmp="$LOG_DIR/filtered.tmp"
     local filtered="$LOG_DIR/filtered.txt"
     local final="$LOG_DIR/prioritized.txt"
 
-    echo -e "${BLUE}🔄 Coletando e Filtrando lista do Flathub (Padrão Sarzedo)...${NC}"
+    # 3. Inicializa Repo Master (No HD de Destino)
+    if [ ! -d "$REPO_MASTER/objects" ]; then
+        echo -e "${BLUE}📦 Inicializando repositório Ostree no HD...${NC}"
+        ostree init --repo="$REPO_MASTER" --mode=archive-z2
+        ostree remote add --repo="$REPO_MASTER" flathub "https://dl.flathub.org/repo/" --set=gpg-verify=false
+    fi
+
+    echo -e "${BLUE}🔄 Coletando e Filtrando lista do Flathub...${NC}"
     
-    # ETAPA 1: Pega a lista bruta
+    # Coleta robusta (Tenta ostree, senão flatpak)
+    ostree remote-ls flathub --repo="$REPO_MASTER" --all --columns=ref > "$all" 2>/dev/null || \
     flatpak remote-ls --system flathub --all --columns=ref > "$all"
+
+    # --- A PENEIRA DE SARZEDO ---
+    grep -vE "(${FILTRO_IGNORAR:-"Debug|Sources"}|Locale)" "$all" > "$filtered" || true
+    grep "Locale" "$all" | grep -iE "${LANG_FILTER:-"pt_BR|pt-BR|pt"}" >> "$filtered" || true
     
-    # ETAPA 2: Remove lixo técnico (Debug/Sources)
-    grep -vE "${FILTRO_IGNORAR:-"(Debug|Sources)"}" "$all" > "$filtered_tmp"
-    
-    # ETAPA 3: A PENEIRA DE IDIOMAS (O que você tinha antes)
-    # Primeiro: Pega tudo que NÃO é Locale (os Apps e Runtimes em si)
-    grep -v "Locale" "$filtered_tmp" > "$filtered" || true
-    
-    # Segundo: Pega APENAS os Locales que batem com o seu filtro PT/EN e joga no bolo
-    grep -E "Locale.*${LANG_FILTER:-"(\.pt|pt_BR|pt-BR|\.en|en_US|en_GB)"}" "$filtered_tmp" >> "$filtered" || true
-    
-    # ETAPA 4: Organização Final
     sort -u "$filtered" -o "$filtered"
-    
-    # Prioriza Runtimes (base) antes dos Apps
     grep "^runtime/" "$filtered" > "$final" || true
     grep "^app/" "$filtered" >> "$final" || true
     
     local TOTAL=$(wc -l < "$final")
     echo -e "${GREEN}✅ Lista pronta com $TOTAL itens filtrados.${NC}"
 
-    # 3. Inicializa Repo Master
-    if [ ! -d "$REPO_MASTER/objects" ]; then
-        ostree init --repo="$REPO_MASTER" --mode=archive-z2
-        ostree remote add --repo="$REPO_MASTER" flathub "https://dl.flathub.org/repo/" --set=gpg-verify=false
+    # 4. Dashboard e Execução Paralela
+    if [ "$TOTAL" -gt 0 ]; then
+        show_progress "$TOTAL" "$THREADS" &
+        DASH_PID=$!
+        
+        # Pull Direto no HD
+        parallel --halt now,fail=1 -j "$THREADS" \
+                 --env REPO_MASTER --env LOG_DIR --env MAX_ALLOWED_GB --env RAIZ \
+                 pull_item :::: "$final" || true
+
+        kill $DASH_PID 2>/dev/null || true
+    else
+        echo -e "${RED}❌ Erro: Nenhum app encontrado!${NC}"
+        exit 1
+    fi
+    
+    # 5. Tratamento de Erro de Espaço
+    if [ -f "$LOG_DIR/ERRO_ESPACO" ]; then
+        echo -e "\n${RED}🛑 LIMITE DE ESPAÇO ATINGIDO NO HD!${NC}"
     fi
 
-    # 4. Dashboard e Execução Paralela
-    show_progress "$TOTAL" "$THREADS" &
-    DASH_PID=$!
-    
-    # Exporta variáveis para o GNU Parallel
-    export MAX_ALLOWED_GB REPO_MASTER LOG_DIR RAIZ
-    # Aqui passamos os caminhos dos discos para o pull_item calcular o espaço total
-    export DISCO_PATHS="${!DISCO_LIMITS[@]}" 
-
-    parallel -j "$THREADS" \
-             --env REPO_MASTER --env LOG_DIR --env MAX_ALLOWED_GB --env RAIZ --env DISCO_PATHS \
-             pull_item :::: "$final"
-
-    # Finalização
-    kill $DASH_PID 2>/dev/null || true
-    
-    echo -e "${YELLOW}🧹 Removendo referências incompletas para limpar o índice...${NC}"
-    ostree fsck --repo="$REPO_MASTER" --delete-corrupted-refs --shallow > /dev/null 2>&1 || true
-
-    echo -e "${BLUE}🔄 Gerando índice apenas do que temos em disco...${NC}"
+    # 6. Finalização
+    echo -e "${BLUE}🔄 Atualizando Índice (Summary)...${NC}"
     ostree summary -u --repo="$REPO_MASTER"
 
-    # Sincroniza para o DISCO1 (Sarzedo) com a marretada de refs que funciona
-    sync_to_destination
+    # Removido sync_to_destination (Já estamos no destino!)
     
+    # Salva o config.env para a próxima vez
     save_config
+    
     echo -e "\n${YELLOW}✅ PROCESSO FINALIZADO COM SUCESSO!${NC}"
 }
 
