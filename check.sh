@@ -29,7 +29,7 @@ declare -A RESULTADOS
 header() {
     clear
     echo -e "${CYAN}${BOLD}==========================================================${NC}"
-    echo -e "      🛡️  AUDITORIA DE INTEGRIDADE - MIRROR SARZEDO"
+    echo -e "      🛡️  AUDITORIA DE INTEGRIDADE - MIRROR ComiteNerd"
     echo -e "${CYAN}${BOLD}==========================================================${NC}"
 }
 

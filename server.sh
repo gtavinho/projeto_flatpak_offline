@@ -17,7 +17,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}==========================================================${NC}"
-echo -e "   🌐 SERVIDOR FLATPAK LOCAL - SARZEDO"
+echo -e "   🌐 SERVIDOR FLATPAK LOCAL - ComiteNerd"
 echo -e "   📍 IP do Servidor: ${CYAN}$SERVER_IP${NC}"
 echo -e "${BLUE}==========================================================${NC}"
 

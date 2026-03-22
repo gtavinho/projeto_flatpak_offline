@@ -144,7 +144,7 @@ ask_configs() {
     # Pega o usuário logado
     local user=$(whoami)
     
-    # Sugere a pasta Raiz DIRETAMENTE no seu HD de Sarzedo (ou onde você preferir)
+    # Sugere a pasta Raiz DIRETAMENTE no seu HD de ComiteNerd (ou onde você preferir)
     local def_raiz=${RAIZ:-/media/$user/DISCO1/Flatpak_Mirror}
     read -p "📂 Onde salvar o Espelho (HD Externo) [$def_raiz]: " input_raiz
     RAIZ=${input_raiz:-$def_raiz}
@@ -342,7 +342,7 @@ main() {
     ostree remote-ls flathub --repo="$REPO_MASTER" --all --columns=ref > "$all" 2>/dev/null || \
     flatpak remote-ls --system flathub --all --columns=ref > "$all"
 
-    # --- A PENEIRA DE SARZEDO ---
+    # --- A PENEIRA DE ComiteNerd ---
     grep -vE "(${FILTRO_IGNORAR:-"Debug|Sources"}|Locale)" "$all" > "$filtered" || true
     grep "Locale" "$all" | grep -iE "${LANG_FILTER:-"pt_BR|pt-BR|pt"}" >> "$filtered" || true
     
