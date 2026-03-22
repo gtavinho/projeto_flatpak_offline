@@ -41,7 +41,7 @@ save_config() {
     local client_script="$REPO_MASTER/setup_client.sh"
 
     # Salva o arquivo de configuração do Mirror
-   {
+    {
         echo "# Arquivo Gerado Automaticamente - $(date)"
         echo "RAIZ=\"$RAIZ\""
         echo "MAX_ALLOWED_GB=\"$MAX_ALLOWED_GB\""
@@ -67,29 +67,73 @@ save_config() {
     local enum_flag="true"
     [[ "$FORCAR_LOCAL" == "true" ]] && enum_flag="false"
 
-    # Gerador de Instalador Robusto para os Clientes (PCs dos meninos)
+    # Gera o instalador para os Clientes (Focado no Mirror Único)
     {
         echo "#!/bin/bash"
         echo "SERVER_IP=\"$SERVER_IP\""
+        echo "PORT_MASTER=8080"
         echo "ENUM_FLAG=\"$enum_flag\""
+        
         cat << 'EOF'
-echo "==========================================="
-echo "  🔧 CONFIGURANDO REPOSITÓRIO LOCAL"
-echo "==========================================="
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[1;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# 1. Adiciona o remoto
-sudo flatpak remote-add --if-not-exists --no-gpg-verify local-master "http://$SERVER_IP:8080"
+echo -e "${BLUE}==========================================================${NC}"
+echo -e "   🔧 CONFIGURAÇÃO DO MIRROR FLATPAK COMITENERD"
+echo -e "${BLUE}==========================================================${NC}"
 
-# 2. Configura Prioridade e Visibilidade
-# --no-enumerate=false força a exibição na Gnome Software/Discover
-sudo flatpak remote-modify --priority=99 --no-enumerate=$ENUM_FLAG local-master
+# 1. PERGUNTA O MODO DE INSTALAÇÃO
+echo -e "Como deseja configurar o repositório no seu PC?"
+echo -e "1) ${YELLOW}Sistema${NC} (Para todos os usuários - Requer senha sudo)"
+echo -e "2) ${YELLOW}Usuário${NC} (Apenas para você - Não requer senha)"
+read -p "Escolha uma opção [1-2]: " OPC_MODO
 
-echo "✅ Concluído! O PC agora prioriza o Mirror Local."
-echo "URL: http://$SERVER_IP:8080"
-echo "==========================================="
+case $OPC_MODO in
+    1) MODE_FLAG="--system"; SUDO_CMD="sudo"; echo -e "\n📡 Modo Sistema selecionado.";;
+    *) MODE_FLAG="--user"; SUDO_CMD=""; echo -e "\n📡 Modo Usuário selecionado.";;
+esac
+
+# 2. TESTE DE CONEXÃO
+echo -e "${BLUE}🔍 Verificando servidor em http://$SERVER_IP:$PORT_MASTER...${NC}"
+if ! curl -s --connect-timeout 3 "http://$SERVER_IP:$PORT_MASTER" > /dev/null; then
+    echo -e "${RED}❌ ERRO: Servidor não encontrado!${NC}"
+    echo -e "Certifique-se que o PC do Gustavo está com o './server.sh' rodando."
+    exit 1
+fi
+
+# 3. CONFIGURAR O REPOSITÓRIO
+echo -e "⭐ Adicionando Mirror Local (local-master)..."
+
+# Remove versões antigas para garantir uma instalação limpa
+$SUDO_CMD flatpak remote-delete $MODE_FLAG local-master 2>/dev/null || true
+
+# Adiciona o repositório apontando para a pasta correta do ostree
+if $SUDO_CMD flatpak remote-add $MODE_FLAG --if-not-exists --no-gpg-verify local-master "http://$SERVER_IP:$PORT_MASTER/ostree-repo-full"; then
+    
+    # Ajuste de Prioridade (Tenta os dois métodos para evitar o erro de opção desconhecida)
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --priority=99 local-master 2>/dev/null || \
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --set priority=99 local-master 2>/dev/null
+    
+    # Ajuste de Visibilidade na Loja (Gnome Software/Discover)
+    if [ -n "$ENUM_FLAG" ]; then
+        $SUDO_CMD flatpak remote-modify $MODE_FLAG $ENUM_FLAG local-master 2>/dev/null || true
+    fi
+
+    echo -e "\n${GREEN}✅ CONFIGURAÇÃO CONCLUÍDA COM SUCESSO!${NC}"
+    echo -e "Agora você pode instalar apps voando pela rede local."
+else
+    echo -e "${RED}❌ FALHA CRÍTICA: Não foi possível adicionar o repositório.${NC}"
+    exit 1
+fi
+echo -e "${BLUE}==========================================================${NC}"
 EOF
     } > "$client_script"
+    
     chmod +x "$client_script"
+    echo -e "${GREEN}✅ Script de instalação para os meninos gerado em: $client_script${NC}"
 }
 
 ## ========= FUNÇÃO DE CONFIGURAÇÃO DE DISCOS EXTRAS =========
@@ -165,6 +209,13 @@ ask_configs() {
     read -p "🌎 Idiomas (Regex) [$def_lang]: " input_lang
     LANG_FILTER=${input_lang:-$def_lang}
 
+    # 4.5 Filtro de Palavras-Chave (Novo!)
+    local def_keys=${KEYWORD_FILTER:-".*"} # ".*" significa "trazer tudo" por padrão
+    echo -e "\n🔍 ${CYAN}Filtro de Busca (Palavras-Chave):${NC}"
+    echo "Exemplo: firefox|chrome|vlc|libreoffice"
+    echo "(Deixe em branco ou use .* para baixar tudo)"
+    read -p "🔎 Buscar por [$def_keys]: " input_keys
+    KEYWORD_FILTER=${input_keys:-$def_keys}
     # Threads
     local def_threads=${THREADS:-4}
     read -p "⚡ Threads [$def_threads]: " input_threads
@@ -342,16 +393,27 @@ main() {
     ostree remote-ls flathub --repo="$REPO_MASTER" --all --columns=ref > "$all" 2>/dev/null || \
     flatpak remote-ls --system flathub --all --columns=ref > "$all"
 
-    # --- A PENEIRA DE ComiteNerd ---
-    grep -vE "(${FILTRO_IGNORAR:-"Debug|Sources"}|Locale)" "$all" > "$filtered" || true
-    grep "Locale" "$all" | grep -iE "${LANG_FILTER:-"pt_BR|pt-BR|pt"}" >> "$filtered" || true
+    # --- A PENEIRA DE ComiteNerd (VERSÃO FILTRO TOTAL) ---
+    local busca="${KEYWORD_FILTER:-.*}"
+    echo -e "${BLUE}🔍 Filtrando rigorosamente por: '$busca'...${NC}"
+
+    # 1. Filtra a lista bruta APENAS pelo que você buscou (ex: vlc)
+    # Isso já elimina 90% do que você não quer
+    grep -iE "$busca" "$all" > "$filtered" || true
+
+    # 2. Agora, desse resultado, removemos o lixo (Debug e Sources)
+    grep -vE "${FILTRO_IGNORAR:-"Debug|Sources"}" "$filtered" > "$final" || true
     
-    sort -u "$filtered" -o "$filtered"
-    grep "^runtime/" "$filtered" > "$final" || true
-    grep "^app/" "$filtered" >> "$final" || true
+    # 3. Filtro de Idiomas (Opcional, mas ajuda a limpar Locales de outros idiomas)
+    # Se quiser ser ainda mais rigoroso com os Locales do VLC:
+    grep -v "Locale" "$final" > "$filtered" || true # Tira todos os locales primeiro
+    grep "Locale" "$final" | grep -iE "${LANG_FILTER:-"pt_BR|pt-BR|pt"}" >> "$filtered" || true # Devolve só os PT/EN
+    
+    # 4. Organização Final
+    sort -u "$filtered" -o "$final"
     
     local TOTAL=$(wc -l < "$final")
-    echo -e "${GREEN}✅ Lista pronta com $TOTAL itens filtrados.${NC}"
+    echo -e "${GREEN}✅ Lista ComiteNerd pronta com $TOTAL itens (Busca: $busca).${NC}"
 
     # 4. Dashboard e Execução Paralela
     if [ "$TOTAL" -gt 0 ]; then

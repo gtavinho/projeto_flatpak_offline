@@ -12,6 +12,16 @@ Embora revolucionários, os apps Flatpak podem ser grandes (centenas de MBs). Em
 
 O Mirror Local resolve isso transformando um PC da sua casa em um "servidor de cache" inteligente.
 
+## 🏆 O Diferencial "ComiteNerd"
+Diferente de soluções profissionais complexas (como LAN Cache ou servidores de CI), este projeto foca na **simplicidade, leveza e controle total** do hardware:
+
+| Recurso | Outras Soluções (Empresariais) | **Este Projeto (ComiteNerd)** |
+| :--- | :--- | :--- |
+| **Peneira de Dados** | Baixa tudo (incluindo centenas de idiomas e pacotes de debug). | **Seletivo:** Baixa apenas PT-BR/EN e o que você filtrar por nome. |
+| **Complexidade** | Exige Docker, Nginx e configurações avançadas de DNS. | **Leve:** Apenas Bash, `ostree` e um servidor Python nativo. |
+| **Portabilidade** | Preso ao servidor e IP fixo. | **USB-Ready:** Baixa direto no HD externo; plugue e use em qualquer PC. |
+| **Interface** | Logs de texto densos e difíceis de ler. | **Dashboard:** Painel visual em tempo real com slots de download. |
+
 ---
 
 ## 📋 Sumário
