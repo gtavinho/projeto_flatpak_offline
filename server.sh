@@ -40,14 +40,21 @@ pkill -f "python3 -m http.server" 2>/dev/null || true
 sleep 1
 
 # 3. LANÇAR O MASTER (Porta 8080)
-REPO_MASTER="$RAIZ/ostree-repo-full"
-prepare_repo "$REPO_MASTER"
+# Vamos garantir que o arquivo esteja na RAIZ e não apenas na subpasta
+echo -ne "📦 Posicionando instalador na vitrine... "
+cp "./setup_client.sh" "$RAIZ/setup_client.sh" 2>/dev/null || \
+cp "$RAIZ/ostree-repo-full/setup_client.sh" "$RAIZ/setup_client.sh" 2>/dev/null
 
-# GARANTIA: Copia o instalador para dentro do repo para que o wget funcione
-cp "./setup_client.sh" "$REPO_MASTER/" 2>/dev/null || true
+if [ -f "$RAIZ/setup_client.sh" ]; then
+    echo -e "${GREEN}OK${NC}"
+else
+    echo -e "${RED}ERRO (Arquivo não encontrado!)${NC}"
+fi
 
 echo -e "🚀 Lançando MASTER em: ${YELLOW}http://$SERVER_IP:8080${NC}"
-python3 -m http.server -d "$REPO_MASTER" 8080 > /dev/null 2>&1 &
+
+# Servindo a RAIZ, o wget agora VAI ACHAR o arquivo no IP:8080/setup_client.sh
+python3 -m http.server -d "$RAIZ" 8080 > /dev/null 2>&1 &
 
 # 4. LANÇAR OS DISCOS DINAMICAMENTE
 PORT=8081
