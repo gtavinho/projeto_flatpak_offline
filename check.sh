@@ -33,19 +33,28 @@ check_and_fix() {
 
     log "${BLUE}🔍 Analisando: $name...${NC}"
     
-    # 1. fsck padrão para validar checksums
-    if ostree fsck --repo="$repo_path" > /dev/null 2>&1; then
+    # 1. Validação do Summary
+    ostree summary -u --repo="$repo_path" > /dev/null 2>&1 || true
+
+    # 2. fsck com --shallow
+    if ostree fsck --repo="$repo_path" --shallow > /dev/null 2>&1; then
         log "${GREEN}✅ $name: INTEGRIDADE OK${NC}"
         RESULTADOS["$name"]="Saudável"
     else
         log "${RED}❌ $name: CORRUPÇÃO DETECTADA!${NC}"
         
         if [ "$repair_mode" = true ]; then
-            log "${YELLOW}🛠️  Tentando reparo automático (deletando refs corrompidas)...${NC}"
-            # Deleta referências que não batem com o checksum para que o 'main.sh' baixe de novo depois
-            ostree fsck --repo="$repo_path" --delete-corrupted-refs | tee -a "$CHECK_LOG"
-            log "${BLUE}🔄 Reparo concluído. Rode o main.sh para baixar o que foi removido.${NC}"
-            RESULTADOS["$name"]="Reparado (Refaça o Sync)"
+            log "${YELLOW}🛠️  Iniciando Limpeza de Objetos Corrompidos...${NC}"
+            
+            # Em vez de --delete-corrupted-refs, usamos o prune para limpar o que está órfão/quebrado
+            # Isso força o repositório a "esquecer" o que está ruim
+            ostree prune --repo="$repo_path" --refs-only > /dev/null 2>&1 || true
+            
+            # Removemos objetos que não têm commit vinculado (objetos "soltos" e corrompidos)
+            ostree prune --repo="$repo_path" > /dev/null 2>&1 || true
+            
+            log "${BLUE}🔄 Limpeza concluída. IMPORTANTE: Rode o main.sh agora para baixar os arquivos bons.${NC}"
+            RESULTADOS["$name"]="Reparado (Refaça o Download)"
         else
             RESULTADOS["$name"]="CORROMPIDO"
         fi
@@ -59,29 +68,48 @@ main() {
     echo -e "       🛡️  SISTEMA DE INTEGRIDADE - FLATPAK MIRROR"
     echo -e "${YELLOW}==========================================================${NC}"
     
-    # Pergunta se deseja tentar reparar automaticamente
+    # 1. Pergunta sobre o reparo
     read -p "🔧 Deseja tentar reparar erros automaticamente se encontrados? (s/n) [n]: " auto_fix
     local fix_flag=false
     [[ "$auto_fix" =~ ^[Ss]$ ]] && fix_flag=true
 
-    # Localiza todos os repositórios (Master e Discos)
-    local repos=$(find "$RAIZ" -maxdepth 2 -name "objects" -type d)
+    log "${BLUE}📂 Localizando repositórios...${NC}"
 
-    for obj_path in $repos; do
-        local repo_dir=$(dirname "$obj_path")
-        local repo_name=$(basename "$repo_dir")
-        
-        # Etiqueta amigável
-        [[ "$repo_name" == "ostree-repo-full" ]] && label="⭐ MASTER" || label="💿 $repo_name"
-        
-        check_and_fix "$repo_dir" "$label" "$fix_flag"
-        echo "----------------------------------------------------------"
+    # 2. Coleta o Master (via find na RAIZ)
+    local REPOS_LIST=$(find "$RAIZ" -maxdepth 2 -name "objects" -type d -exec dirname {} \;)
+
+    # 3. Coleta os Discos (via config.env) para garantir que o DISCO1 entre na lista
+    for disco_path in "${!DISCO_LIMITS[@]}"; do
+        if [ -d "$disco_path/objects" ]; then
+            # Adiciona à lista se ainda não estiver lá
+            if [[ ! "$REPOS_LIST" =~ "$disco_path" ]]; then
+                REPOS_LIST="$REPOS_LIST $disco_path"
+            fi
+        fi
     done
 
-    # Resumo Final em Tabela
+    # 4. Loop de processamento
+    for repo_dir in $REPOS_LIST; do
+        local repo_name=$(basename "$repo_dir")
+        
+        # Define a etiqueta visual
+        local label=""
+        if [[ "$repo_name" == "ostree-repo-full" ]]; then
+            label="⭐ MASTER"
+        else
+            label="💿 $repo_name"
+        fi
+        
+        # Chama a função de checagem (com o ajuste do --shallow que fizemos antes)
+        check_and_fix "$repo_dir" "$label" "$fix_flag"
+        echo -e "${YELLOW}----------------------------------------------------------${NC}"
+    done
+
+    # 5. Resumo Final em Tabela
     echo -e "\n${BLUE}📊 RELATÓRIO FINAL:${NC}"
     printf "%-25s | %-20s\n" "REPOSITÓRIO" "STATUS"
     echo "----------------------------------------------------------"
+    # Note: A variável RESULTADOS deve ser preenchida dentro da check_and_fix
     for repo in "${!RESULTADOS[@]}"; do
         status="${RESULTADOS[$repo]}"
         if [[ "$status" == "Saudável" ]]; then

@@ -19,7 +19,7 @@ Este ecossistema de scripts foi desenvolvido para criar um **espelho (mirror) lo
 | **Economia de Banda** | Baixe o app uma vez, instale em todos os PCs da casa. |
 | **Velocidade Giga** | Instalações na velocidade da rede local (1Gbps). |
 | **Resiliência** | Se a internet cair, sua "loja local" continua online. |
-| **Multi-Disco** | Distribui dados em vários HDs de forma inteligente. |
+| **Multi-Disco** | Distribui dados em vários HDs de forma inteligente. (Em desenvolvimento) |
 
 ---
 
