@@ -1,96 +1,119 @@
 #!/bin/bash
-set -euo pipefail
+# Removi o -u temporariamente para a carga de arrays dinâmicos não quebrar
+set -eo pipefail 
 
-# ========= CONFIGURAÇÃO =========
+# ========= CONFIGURAÇÃO E CORES =========
 CONFIG_FILE="./config.env"
-[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+# Inicializa o array antes para garantir que ele exista
+declare -A DISCO_LIMITS=() 
 
+if [ -f "$CONFIG_FILE" ]; then
+    # Carrega as configurações
+    source "$CONFIG_FILE"
+fi
+
+# Cores e Estilo
+GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
+BLUE='\033[1;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+BOLD='\033[1m'
+
+# Caminhos padrão
 RAIZ=${RAIZ:-/home/gustavo/Flatpak}
 LOG_DIR="$RAIZ/logs"
 CHECK_LOG="$LOG_DIR/integrity-check.log"
-
-# Cores
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-NC='\033[0m'
-
 mkdir -p "$LOG_DIR"
 
-# Variáveis de controle para o resumo final
 declare -A RESULTADOS
 
-log() {
-    echo -e "[$(date '+%H:%M:%S')] $1" | tee -a "$CHECK_LOG"
+# ========= FUNÇÕES DE APOIO =========
+header() {
+    clear
+    echo -e "${CYAN}${BOLD}==========================================================${NC}"
+    echo -e "      🛡️  AUDITORIA DE INTEGRIDADE - MIRROR SARZEDO"
+    echo -e "${CYAN}${BOLD}==========================================================${NC}"
 }
 
-# ========= FUNÇÃO DE VERIFICAÇÃO E REPARO =========
-check_and_fix() {
-    local repo_path="$1"
-    local name="$2"
-    local repair_mode="${3:-false}"
+log_status() {
+    local color="$1"
+    local msg="$2"
+    echo -e "${color}${msg}${NC}" | tee -a "$CHECK_LOG"
+}
 
-    log "${BLUE}🔍 Analisando: $name...${NC}"
+verify_repo() {
+    local repo_path="$1"
+    local label="$2"
+    local fix_mode="$3"
+
+    echo -ne "🔍 Analisando ${BOLD}$label${NC}... "
     
-    # 1. fsck padrão para validar checksums
-    if ostree fsck --repo="$repo_path" > /dev/null 2>&1; then
-        log "${GREEN}✅ $name: INTEGRIDADE OK${NC}"
-        RESULTADOS["$name"]="Saudável"
+    ostree summary -u --repo="$repo_path" > /dev/null 2>&1 || true
+
+    if ostree fsck --repo="$repo_path" --shallow > /dev/null 2>&1; then
+        echo -e "${GREEN}[SAUDÁVEL]${NC}"
+        RESULTADOS["$label"]="${GREEN}✔ Saudável${NC}"
     else
-        log "${RED}❌ $name: CORRUPÇÃO DETECTADA!${NC}"
+        echo -e "${RED}[CORROMPIDO]${NC}"
         
-        if [ "$repair_mode" = true ]; then
-            log "${YELLOW}🛠️  Tentando reparo automático (deletando refs corrompidas)...${NC}"
-            # Deleta referências que não batem com o checksum para que o 'main.sh' baixe de novo depois
-            ostree fsck --repo="$repo_path" --delete-corrupted-refs | tee -a "$CHECK_LOG"
-            log "${BLUE}🔄 Reparo concluído. Rode o main.sh para baixar o que foi removido.${NC}"
-            RESULTADOS["$name"]="Reparado (Refaça o Sync)"
+        if [ "$fix_mode" = "true" ]; then
+            log_status "$YELLOW" "🛠️  Tentando reparo em $label..."
+            ostree fsck --repo="$repo_path" --delete-corrupted-refs --shallow > /dev/null 2>&1 || true
+            ostree prune --repo="$repo_path" --refs-only > /dev/null 2>&1 || true
+            RESULTADOS["$label"]="${YELLOW}⚠ Reparado (Incompleto)${NC}"
         else
-            RESULTADOS["$name"]="CORROMPIDO"
+            RESULTADOS["$label"]="${RED}✖ Corrompido${NC}"
         fi
     fi
 }
 
-# ========= EXECUÇÃO =========
+# ========= MAIN =========
 main() {
-    clear
-    echo -e "${YELLOW}==========================================================${NC}"
-    echo -e "       🛡️  SISTEMA DE INTEGRIDADE - FLATPAK MIRROR"
-    echo -e "${YELLOW}==========================================================${NC}"
+    header
     
-    # Pergunta se deseja tentar reparar automaticamente
-    read -p "🔧 Deseja tentar reparar erros automaticamente se encontrados? (s/n) [n]: " auto_fix
+    echo -e "Deseja que o script tente ${BOLD}REPARAR${NC} (deletar refs órfãs) automaticamente?"
+    read -p "(s/n) [n]: " auto_fix
     local fix_flag=false
     [[ "$auto_fix" =~ ^[Ss]$ ]] && fix_flag=true
 
-    # Localiza todos os repositórios (Master e Discos)
-    local repos=$(find "$RAIZ" -maxdepth 2 -name "objects" -type d)
+    echo -e "\n${BLUE}📂 Mapeando Repositórios...${NC}"
+    
+    local REPOS_TO_CHECK=()
 
-    for obj_path in $repos; do
-        local repo_dir=$(dirname "$obj_path")
-        local repo_name=$(basename "$repo_dir")
-        
-        # Etiqueta amigável
-        [[ "$repo_name" == "ostree-repo-full" ]] && label="⭐ MASTER" || label="💿 $repo_name"
-        
-        check_and_fix "$repo_dir" "$label" "$fix_flag"
-        echo "----------------------------------------------------------"
+    # 1. MASTER
+    local master_path="$RAIZ/ostree-repo-full"
+    [ -d "$master_path/objects" ] && REPOS_TO_CHECK+=("$master_path|⭐ MASTER")
+
+    # 2. DISCOS (Com trava de segurança para variável vazia)
+    if [ ${#DISCO_LIMITS[@]} -gt 0 ]; then
+        for d_path in "${!DISCO_LIMITS[@]}"; do
+            if [ -d "$d_path/objects" ]; then
+                REPOS_TO_CHECK+=("$d_path|💿 $(basename "$d_path")")
+            fi
+        done
+    fi
+
+    echo -e "Encontrados ${BOLD}${#REPOS_TO_CHECK[@]}${NC} repositórios ativos.\n"
+
+    for entry in "${REPOS_TO_CHECK[@]}"; do
+        IFS="|" read -r path label <<< "$entry"
+        verify_repo "$path" "$label" "$fix_flag"
     done
 
-    # Resumo Final em Tabela
-    echo -e "\n${BLUE}📊 RELATÓRIO FINAL:${NC}"
-    printf "%-25s | %-20s\n" "REPOSITÓRIO" "STATUS"
+    echo -e "\n${CYAN}📊 RESUMO DA AUDITORIA:${NC}"
+    echo -e "----------------------------------------------------------"
+    # Ajustamos o alinhamento para não quebrar com o emoji
+    printf "${BOLD}%-30s | %-20s${NC}\n" "REPOSITÓRIO" "STATUS"
     echo "----------------------------------------------------------"
-    for repo in "${!RESULTADOS[@]}"; do
-        status="${RESULTADOS[$repo]}"
-        if [[ "$status" == "Saudável" ]]; then
-            printf "%-25s | ${GREEN}%-20s${NC}\n" "$repo" "$status"
-        else
-            printf "%-25s | ${RED}%-20s${NC}\n" "$repo" "$status"
-        fi
+    
+    # Usamos o loop simples para evitar quebras de nomes com espaços ou estrelas
+    for label in "${!RESULTADOS[@]}"; do
+        status="${RESULTADOS[$label]}"
+        printf "%-30b | %b\n" "$label" "$status"
     done
-    echo -e "\n${YELLOW}📄 Log completo em: $CHECK_LOG${NC}"
+    echo "----------------------------------------------------------"
+
+    if [[ " ${RESULTADOS[@]} " =~ "Corrompido" ]] || [[ " ${RESULTADOS[@]} " =~ "Reparado" ]]; then
+        echo -e "\n${RED}📢 NOTA:${NC} Problemas encontrados. Rode o ${BOLD}main.sh${NC} para completar os arquivos."
+    fi
 }
 
 main

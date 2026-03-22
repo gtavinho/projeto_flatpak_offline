@@ -1,6 +1,17 @@
 # 🚀 Flatpak Local Mirror Manager
 
-Este ecossistema de scripts foi desenvolvido para criar um **espelho (mirror) local do Flathub**. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), economizando largura de banda e acelerando instalações.
+🚀 Flatpak Local Mirror Manager
+Este ecossistema de scripts foi desenvolvido para criar um espelho (mirror) local do Flathub. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), economizando largura de banda e acelerando instalações em até 100x.
+
+Cenário Ideal: Lares ou escritórios com múltiplos PCs Linux (Zorin OS, Mint, Ubuntu) e conexões de internet limitadas ou que desejam performance máxima na rede interna.
+
+📦 O que é o Flatpak?
+O Flatpak é o padrão moderno de distribuição de apps no Linux. Ao contrário dos pacotes tradicionais (.deb ou .rpm), o Flatpak isola o aplicativo do sistema principal (sandbox), trazendo todas as dependências necessárias para rodar o software dentro de um "container".
+
+Por que o Mirror Local é necessário?
+Embora revolucionários, os apps Flatpak podem ser grandes (centenas de MBs). Em uma casa com 3 ou 4 computadores, baixar o mesmo navegador ou suíte de escritório em todos eles é um desperdício de tempo e franquia de dados.
+
+O Mirror Local resolve isso transformando um PC da sua casa em um "servidor de cache" inteligente.
 
 ---
 
@@ -9,6 +20,7 @@ Este ecossistema de scripts foi desenvolvido para criar um **espelho (mirror) lo
 * [📂 Estrutura do Projeto](#-estrutura-do-projeto)
 * [🚀 Como Instalar e Executar](#-como-instalar-e-executar)
 * [🛠️ Descrição dos Scripts](#-descrição-dos-scripts)
+* [🔮 Roadmap](#-roadmap)
 
 ---
 
@@ -16,77 +28,65 @@ Este ecossistema de scripts foi desenvolvido para criar um **espelho (mirror) lo
 
 | Recurso | Descrição |
 | :--- | :--- |
-| **Economia de Banda** | Baixe o app uma vez, instale em todos os PCs da casa. |
-| **Velocidade Giga** | Instalações na velocidade da rede local (1Gbps). |
-| **Resiliência** | Se a internet cair, sua "loja local" continua online. |
-| **Multi-Disco** | Distribui dados em vários HDs de forma inteligente. |
+| **Economia de Banda** | Baixe o app uma vez, instale em todos os PCs da rede. |
+| **Velocidade Giga** | Instalações na velocidade da LAN (1Gbps ou mais). |
+| **Peneira de Idiomas** | Filtra automaticamente apenas PT-BR e EN, economizando GBs. |
+| **Modo Direto** | Baixa os arquivos diretamente no HD Externo, poupando seu SSD. |
 
 ---
 
 ## 📂 Estrutura do Projeto
 
-* **`config.env`**: O "cérebro". Guarda IPs, caminhos e limites de disco.
-* **`main.sh`**: O motor. Baixa do Flathub, filtra idiomas e indexa o repositório.
-* **`server.sh`**: O distribuidor. Inicia os servidores HTTP para a rede local.
-* **`check.sh`**: O zelador. Garante que os dados não estão corrompidos.
-* **`setup_client.sh`**: O conector. Script auto-gerado para configurar os clientes.
+* **`config.env`**: O "cérebro". Guarda IPs, caminhos e o limite de espaço em GB.
+* **`main.sh`**: O motor. Faz a coleta, aplica a peneira de idiomas e gerencia o download paralelo.
+* **`server.sh`**: O distribuidor. Inicia o servidor HTTP para disponibilizar o repositório na rede.
+* **`setup_client.sh`**: O conector. Script auto-gerado que configura os outros PCs para usar o seu espelho.
 
 ---
 
 ## 🚀 Como Instalar e Executar
 
 ### 1. Preparação (No Servidor)
-Instale as dependências necessárias no seu PC principal (Zorin OS/Mint/Ubuntu):
+Instale as dependências no seu PC principal (Zorin OS/Mint/Ubuntu):
 ```bash
 sudo apt update && sudo apt install flatpak ostree parallel python3 bc tput curl
-```
 
-### 2. Configuração e Download
-Dê permissão de execução e inicie o download dos pacotes:
-```bash
+2. Configuração e Download
+Dê permissão de execução e inicie o assistente:
+
+Bash
 chmod +x *.sh
 ./main.sh
-```
+Dica: Na pergunta "Pasta do Espelho", aponte para o ponto de montagem do seu HD Externo.
 
-### 3. Iniciar a Distribuição
-Abra as portas para que outros computadores vejam seus arquivos:
-```bash
+3. Iniciar a Distribuição
+Inicie o servidor para que os outros PCs vejam seus arquivos:
+
+Bash
 ./server.sh
-```
+4. Configurar os Clientes (PCs dos meninos/outros)
+No computador que vai receber os apps, execute o comando gerado pelo main.sh:
 
-### 4. Configurar os Clientes (Outros PCs)
-No computador que deseja receber os apps, substitua `[IP_DO_SERVIDOR]` pelo IP real do seu PC principal (ex: `192.168.1.100`):
-```bash
+Bash
 bash <(wget -qO- http://[IP_DO_SERVIDOR]:8080/setup_client.sh)
-```
-
-> Nota: Usamos `bash <(...)` em vez de pipe direto para permitir que o script interaja com o teclado (escolha entre modo Sistema ou Usuário).
-
 🛠️ Descrição Detalhada
 main.sh
-Consulta o Flathub, filtra idiomas (PT-BR/EN) e baixa tudo via threads paralelas. Ao final, gera um índice (Summary) vital para que os clientes consigam ler o catálogo e cria o instalador cliente atualizado.
+Utiliza ostree e parallel para baixar os pacotes do Flathub em alta velocidade. Possui um Dashboard em tempo real que monitora o progresso e o espaço ocupado no HD. Aplica filtros inteligentes para ignorar versões de Debug, Sources e idiomas desnecessários.
 
 server.sh
-Inicia instâncias do servidor Python nas portas 8080 (Master) e 8081+ (Discos). Gerencia o encerramento limpo (kill) de todos os processos ao sair com Ctrl+C.
+Cria um servidor de arquivos leve (Python HTTP) apontando para o seu repositório no HD. Gerencia o encerramento limpo dos processos ao sair.
 
-check.sh
-Varre os repositórios em busca de erros de integridade. Identifica referências "podres" para que o main.sh as conserte automaticamente no próximo ciclo.
+🔮 Roadmap (Futuro)
+[ ] Suporte Multi-Disco: Implementação de lógica para distribuir o repositório entre múltiplos HDs físicos quando o primeiro lotar.
+
+[ ] Interface Web: Painel simples para ver quais apps já estão "espelhados".
+
+[ ] Auto-Update: Script agendado para atualizar o mirror nas madrugadas.
 
 👋 Contato e Créditos
-Desenvolvido por Gustavo Caetano Reis — Sarzedo/MG 🇧🇷
+Desenvolvido por Gustavo Caetano Reis 🇧🇷
 
-[📦 Meu Portfólio no GitHub](https://github.com/gtavinho)
+📦 [Meu Portfólio no GitHub](https://github.com/gtavinho) | 💼 [LinkedIn](https://www.linkedin.com/in/gtavinho/)
 
-[💼 Conecte-se comigo no LinkedIn](https://www.linkedin.com/in/gtavinho/)
-
-## ⚖️ Licença
-
-Este projeto está sob a licença **MIT**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
-
-## 🛡️ Badges
-
-![License](https://img.shields.io/badge/license-MIT-blue)
-![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![GitHub Issues](https://img.shields.io/github/issues/gtavinho/projeto_flatpak_offline)
+⚖️ Licença
+Este projeto está sob a licença MIT.
