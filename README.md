@@ -23,6 +23,7 @@ Diferente de soluções profissionais complexas (como LAN Cache ou servidores de
 | **Interface** | Logs de texto densos e difíceis de ler. | **Dashboard:** Painel visual em tempo real com slots de download. |
 
 **ATENÇÃO: o download pode usar todos os recursos do SSD provocando gargalos e travamentos durante o download. Não precisa interferir, só aguarde!**
+
 <img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/718a5a06-5e89-4488-bffe-c2655b56ceed" />
 
 ---
