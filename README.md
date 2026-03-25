@@ -22,7 +22,7 @@ Diferente de soluções profissionais complexas (como LAN Cache ou servidores de
 | **Portabilidade** | Preso ao servidor e IP fixo. | **USB-Ready:** Baixa direto no HD externo; plugue e use em qualquer PC. |
 | **Interface** | Logs de texto densos e difíceis de ler. | **Dashboard:** Painel visual em tempo real com slots de download. |
 
-**ATENÇÃO: o download pode usar todos os recursos do SSD provocando gargalos e travamentos durante o download. Não precisa interferir, só aguarde!**
+**ATENÇÃO: o download pode usar todos os recursos do SSD provocando gargalos e travamentos durante o download. Use de 1 a 2 threads (slots) para discos comuns.**
 
 <img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/0894a7a5-22e5-4b83-b20f-003a692547d7" />
 
