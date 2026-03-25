@@ -24,7 +24,8 @@ Diferente de soluções profissionais complexas (como LAN Cache ou servidores de
 
 **ATENÇÃO: o download pode usar todos os recursos do SSD provocando gargalos e travamentos durante o download. Não precisa interferir, só aguarde!**
 
-<img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/718a5a06-5e89-4488-bffe-c2655b56ceed" />
+<img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/0894a7a5-22e5-4b83-b20f-003a692547d7" />
+
 
 Evite discos com péssima qualidade!
 ---
