@@ -277,35 +277,47 @@ show_progress() {
 }
 
 # ========= 6. PROCESSO DE DOWNLOAD =========
+Lembro sim, Gustavo! O seu pull_item atual é o "ponto de checagem" principal do script. O problema dele agora é que ele é rígido demais: se um app dá erro (como o 404 que vimos), ele retorna 1, e isso faz o parallel puxar o freio de mão de uma vez só.
+
+Vamos atualizar essa função para ela ser mais "resiliente" — ou seja, se um app der erro, ela anota no log e pula para o próximo sem parar o motor do Santana.
+
+🛠️ O Novo pull_item (Versão ComiteNerd Resiliente)
+Substitua a sua função antiga por esta aqui no seu main.sh:
+
+Bash
 pull_item() {
     local ref="$1"
     local slot=${PARALLEL_SEQ:-1}
     local thread_file="$LOG_DIR/thread_$slot.txt"
+    local error_log="$LOG_DIR/falhas_download.log"
 
-    # 1. ATUALIZA O DASHBOARD IMEDIATAMENTE (Limpa o "Sucesso" anterior)
-    # Mostra apenas o final do nome do app para caber na tela
+    # 1. ATUALIZA O DASHBOARD
     echo "⬇️ Baixando: ${ref: -35}" > "$thread_file"
 
     # 2. Cálculo de espaço (Foco na RAIZ/HD)
     local current_kb=$(du -s "$RAIZ" 2>/dev/null | cut -f1 || echo 0)
     local current_gb=$((current_kb / 1024 / 1024))
 
-    # 3. Checagem de Limite
+    # 3. Checagem de Limite (Aqui o retorno 1 é necessário para parar TUDO)
     if [ "$current_gb" -ge "$MAX_ALLOWED_GB" ]; then
         echo "🛑 DISCO CHEIO!" > "$thread_file"
         touch "$LOG_DIR/ERRO_ESPACO"
         return 1 
     fi
 
-    # 4. Execução do Pull Real
-    # Redirecionamos o log do ostree para não sujar o dashboard
+    # 4. Execução do Pull com o "Pulo do Gato"
+    # Se der erro (404, timeout, etc), nós registramos mas não paramos a fila
     if ostree pull --repo="$REPO_MASTER" flathub "$ref" --depth=1 >/dev/null 2>&1; then
         inc_progress
-        # Marca como sucesso para o usuário ver que terminou este item
         echo "✅ Concluído: ${ref: -30}" > "$thread_file"
+        return 0
     else
-        echo "❌ FALHA: ${ref: -30}" > "$thread_file"
-        return 1
+        # Se falhou, avisamos no dashboard e salvamos no arquivo de logs
+        echo "❌ PULADO (ERRO): ${ref: -25}" > "$thread_file"
+        echo "[$(date '+%H:%M:%S')] FALHA: $ref" >> "$error_log"
+        
+        # O SEGREDO: Retornamos 0 para o Parallel achar que pode continuar com o próximo
+        return 0
     fi
 }
 
