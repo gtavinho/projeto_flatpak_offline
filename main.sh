@@ -277,14 +277,7 @@ show_progress() {
 }
 
 # ========= 6. PROCESSO DE DOWNLOAD =========
-Lembro sim, Gustavo! O seu pull_item atual é o "ponto de checagem" principal do script. O problema dele agora é que ele é rígido demais: se um app dá erro (como o 404 que vimos), ele retorna 1, e isso faz o parallel puxar o freio de mão de uma vez só.
 
-Vamos atualizar essa função para ela ser mais "resiliente" — ou seja, se um app der erro, ela anota no log e pula para o próximo sem parar o motor do Santana.
-
-🛠️ O Novo pull_item (Versão ComiteNerd Resiliente)
-Substitua a sua função antiga por esta aqui no seu main.sh:
-
-Bash
 pull_item() {
     local ref="$1"
     local slot=${PARALLEL_SEQ:-1}
