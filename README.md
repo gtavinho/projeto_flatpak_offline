@@ -26,6 +26,7 @@ Diferente de soluções profissionais complexas (como LAN Cache ou servidores de
 
 <img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/718a5a06-5e89-4488-bffe-c2655b56ceed" />
 
+Evite discos com péssima qualidade!
 ---
 
 ## 📋 Sumário
