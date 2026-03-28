@@ -48,7 +48,7 @@ verify_repo() {
     
     ostree summary -u --repo="$repo_path" > /dev/null 2>&1 || true
 
-    if ostree fsck --repo="$repo_path" --shallow > /dev/null 2>&1; then
+    if ostree fsck --repo="$repo_path" > /dev/null 2>&1; then
         echo -e "${GREEN}[SAUDÁVEL]${NC}"
         RESULTADOS["$label"]="${GREEN}✔ Saudável${NC}"
     else

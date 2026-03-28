@@ -133,7 +133,7 @@ EOF
     } > "$client_script"
     
     chmod +x "$client_script"
-    echo -e "${GREEN}✅ Script de instalação para os meninos gerado em: $client_script${NC}"
+    echo -e "${GREEN}✅ Script de instalação para os clientes gerado em: $client_script${NC}"
 }
 
 ## ========= FUNÇÃO DE CONFIGURAÇÃO DE DISCOS EXTRAS =========
@@ -280,36 +280,35 @@ show_progress() {
 
 pull_item() {
     local ref="$1"
-    local slot=${PARALLEL_SEQ:-1}
-    local thread_file="$LOG_DIR/thread_$slot.txt"
-    local error_log="$LOG_DIR/falhas_download.log"
+    
+    # Garante que o slot seja calculado corretamente (THREADS precisa estar exportada)
+    local slot=$(( (PARALLEL_SEQ - 1) % ${THREADS:-4} + 1 ))
+    
+    # Usar caminhos absolutos evita que o log suma no limbo
+    local thread_file="${LOG_DIR}/thread_${slot}.txt"
+    local error_log="${LOG_DIR}/falhas_download.log"
 
-    # 1. ATUALIZA O DASHBOARD
     echo "⬇️ Baixando: ${ref: -35}" > "$thread_file"
 
-    # 2. Cálculo de espaço (Foco na RAIZ/HD)
     local current_kb=$(du -s "$RAIZ" 2>/dev/null | cut -f1 || echo 0)
     local current_gb=$((current_kb / 1024 / 1024))
 
-    # 3. Checagem de Limite (Aqui o retorno 1 é necessário para parar TUDO)
     if [ "$current_gb" -ge "$MAX_ALLOWED_GB" ]; then
         echo "🛑 DISCO CHEIO!" > "$thread_file"
-        touch "$LOG_DIR/ERRO_ESPACO"
+        touch "${LOG_DIR}/ERRO_ESPACO"
         return 1 
     fi
 
-    # 4. Execução do Pull com o "Pulo do Gato"
-    # Se der erro (404, timeout, etc), nós registramos mas não paramos a fila
+    # Tenta o download
     if ostree pull --repo="$REPO_MASTER" flathub "$ref" --depth=1 >/dev/null 2>&1; then
         inc_progress
         echo "✅ Concluído: ${ref: -30}" > "$thread_file"
         return 0
     else
-        # Se falhou, avisamos no dashboard e salvamos no arquivo de logs
+        # AGORA VAI: Forçamos a escrita e um 'sync' para garantir que o dado vá para o HD
         echo "❌ PULADO (ERRO): ${ref: -25}" > "$thread_file"
         echo "[$(date '+%H:%M:%S')] FALHA: $ref" >> "$error_log"
-        
-        # O SEGREDO: Retornamos 0 para o Parallel achar que pode continuar com o próximo
+        sync "$error_log" # Garante a gravação física no disco
         return 0
     fi
 }
@@ -372,7 +371,7 @@ main() {
 
     # Exportamos apenas o necessário para o Parallel
     # Removi DISCO_PATHS pois agora o pull_item só olha para RAIZ
-    export MAX_ALLOWED_GB REPO_MASTER LOG_DIR RAIZ FORCAR_LOCAL LANG_FILTER
+    export MAX_ALLOWED_GB REPO_MASTER LOG_DIR RAIZ FORCAR_LOCAL LANG_FILTER THREADS
 
     # --- AUTO-RESET DE LOGS ---
     echo -e "${YELLOW}🧹 Preparando ambiente...${NC}"
