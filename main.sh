@@ -244,10 +244,35 @@ ask_configs() {
 # ========= 5. FUNÇÕES DE APOIO E DASHBOARD =========
 inc_progress() {
     local file="$LOG_DIR/progress.count"
-    echo $(( $(cat "$file" 2>/dev/null || echo 0) + 1 )) > "$file"
+    local lockfile="$LOG_DIR/progress.lock"
+
+    (
+        flock -x 200
+
+        local val=$(cat "$file" 2>/dev/null || echo 0)
+        val=${val//[^0-9]/}   # limpa lixo
+        
+        echo $((val + 1)) > "$file"
+
+    ) 200>"$lockfile"
 }
 
 get_progress() { cat "$LOG_DIR/progress.count" 2>/dev/null || echo 0; }
+
+# ======== Funcao para falhas ==============
+
+inc_fail() {
+    local file="$LOG_DIR/fail.count"
+    local lock="$LOG_DIR/fail.lock"
+
+    (
+        flock -x 200
+        local val=$(cat "$file" 2>/dev/null || echo 0)
+        val=${val//[^0-9]/}
+        echo $((val + 1)) > "$file"
+    ) 200>"$lock"
+}
+export -f inc_fail
 
 show_progress() {
     local total="$1"
@@ -288,6 +313,12 @@ pull_item() {
     local thread_file="${LOG_DIR}/thread_${slot}.txt"
     local error_log="${LOG_DIR}/falhas_download.log"
 
+    if ostree rev-parse --repo="$REPO_MASTER" "flathub:$ref" >/dev/null 2>&1; then
+        echo "⏭️ Já existe: ${ref: -30}" > "$thread_file"
+        inc_progress
+        return 0
+    fi
+
     echo "⬇️ Baixando: ${ref: -35}" > "$thread_file"
 
     local current_kb=$(du -s "$RAIZ" 2>/dev/null | cut -f1 || echo 0)
@@ -296,7 +327,7 @@ pull_item() {
     if [ "$current_gb" -ge "$MAX_ALLOWED_GB" ]; then
         echo "🛑 DISCO CHEIO!" > "$thread_file"
         touch "${LOG_DIR}/ERRO_ESPACO"
-        return 1 
+        return 0 
     fi
 
     # Tenta o download
@@ -308,6 +339,7 @@ pull_item() {
         # AGORA VAI: Forçamos a escrita e um 'sync' para garantir que o dado vá para o HD
         echo "❌ PULADO (ERRO): ${ref: -25}" > "$thread_file"
         echo "[$(date '+%H:%M:%S')] FALHA: $ref" >> "$error_log"
+        inc_fail
         sync "$error_log" # Garante a gravação física no disco
         return 0
     fi
@@ -376,10 +408,12 @@ main() {
     # --- AUTO-RESET DE LOGS ---
     echo -e "${YELLOW}🧹 Preparando ambiente...${NC}"
     rm -f "$LOG_DIR/STOP_ALL" "$LOG_DIR/ERRO_ESPACO"
-    rm -f "$LOG_DIR/thread_*.txt" 
+    rm -f "$LOG_DIR/thread_*.txt"
+    rm -f "$LOG_DIR/falhas_download.log"
     echo "0" > "$LOG_DIR/progress.count"
+    echo "0" > "$LOG_DIR/fail.count"
 
-    # 2. Arquivos Temporários para a Peneira
+
     local all="$LOG_DIR/all.txt"
     local filtered="$LOG_DIR/filtered.txt"
     local final="$LOG_DIR/prioritized.txt"
@@ -403,16 +437,23 @@ main() {
 
     # 1. Filtra a lista bruta APENAS pelo que você buscou (ex: vlc)
     # Isso já elimina 90% do que você não quer
-    grep -iE "$busca" "$all" > "$filtered" || true
+    if ! grep -iE "$busca" "$all" > "$filtered"; then
+        echo -e "${RED}❌ Nenhum resultado para o filtro!${NC}"
+    fi
 
     # 2. Agora, desse resultado, removemos o lixo (Debug e Sources)
     grep -vE "${FILTRO_IGNORAR:-"Debug|Sources"}" "$filtered" > "$final" || true
     
     # 3. Filtro de Idiomas (Opcional, mas ajuda a limpar Locales de outros idiomas)
     # Se quiser ser ainda mais rigoroso com os Locales do VLC:
-    grep -v "Locale" "$final" > "$filtered" || true # Tira todos os locales primeiro
-    grep "Locale" "$final" | grep -iE "${LANG_FILTER:-"pt_BR|pt-BR|pt"}" >> "$filtered" || true # Devolve só os PT/EN
-    
+    awk -v lang="${LANG_FILTER:-pt_BR|pt-BR|pt}" "
+    /Locale/ {
+        if (\$0 ~ lang) print
+        next
+    }
+    { print }
+    " "$final" > "$filtered"
+
     # 4. Organização Final
     sort -u "$filtered" -o "$final"
     
@@ -425,11 +466,11 @@ main() {
         DASH_PID=$!
         
         # Pull Direto no HD
-        parallel --halt now,fail=1 -j "$THREADS" \
+        parallel --halt never -j "$THREADS" \
                  --env REPO_MASTER --env LOG_DIR --env MAX_ALLOWED_GB --env RAIZ \
                  pull_item :::: "$final" || true
 
-        kill $DASH_PID 2>/dev/null || true
+        trap "kill $DASH_PID 2>/dev/null" EXIT
     else
         echo -e "${RED}❌ Erro: Nenhum app encontrado!${NC}"
         exit 1
@@ -448,8 +489,12 @@ main() {
     
     # Salva o config.env para a próxima vez
     save_config
-    
-    echo -e "\n${YELLOW}✅ PROCESSO FINALIZADO COM SUCESSO!${NC}"
+    FAILS=$(cat "$LOG_DIR/fail.count" 2>/dev/null || echo 0)
+    if [ "$FAILS" -gt 0 ]; then
+        echo -e "\n${YELLOW}⚠️ Finalizado com $FAILS falhas!${NC}"
+    else
+        echo -e "\n${GREEN}✅ Tudo baixado com sucesso!${NC}"
+    fi
 }
 
 main
