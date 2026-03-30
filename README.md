@@ -1,6 +1,6 @@
 # 🚀 Flatpak Local Mirror Manager (Edição ComiteNerd)
 
-Este ecossistema de scripts transforma seu PC (ou aquele seu **ComiteNerd Tech** com HD de 750GB) em um poderoso **Servidor de Aplicativos Local**. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), funcionando até **100% Offline**, economizando largura de banda e acelerando instalações em até 100x.
+Este ecossistema de scripts transforma seu PC (ou aquele seu **ComiteNerd Tech** com HD de 200GB) em um poderoso **Servidor de Aplicativos Local**. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), funcionando até **100% Offline**, economizando largura de banda e acelerando instalações em até 100x.
 
 **Cenário Ideal:** Lares ou escritórios com múltiplos PCs Linux (Zorin OS, Mint, Ubuntu) e conexões de internet limitadas ou que desejam performance máxima na rede interna.
 
