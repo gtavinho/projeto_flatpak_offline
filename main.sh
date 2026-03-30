@@ -1,4 +1,10 @@
 #!/bin/bash
+# Verifica se está rodando no bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "❌ Este script precisa ser executado com bash!"
+    echo "👉 Use: bash $0"
+    exit 1
+fi
 set -euo pipefail
 
 # ========= CORES PARA O TERMINAL =========
@@ -82,48 +88,81 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${BLUE}==========================================================${NC}"
-echo -e "   🔧 CONFIGURAÇÃO DO MIRROR FLATPAK COMITENERD"
+echo -e "   🚀 CONFIGURAÇÃO DO MIRROR FLATPAK COMITENERD"
 echo -e "${BLUE}==========================================================${NC}"
 
 # 1. PERGUNTA O MODO DE INSTALAÇÃO
 echo -e "Como deseja configurar o repositório no seu PC?"
-echo -e "1) ${YELLOW}Sistema${NC} (Para todos os usuários - Requer senha sudo)"
-echo -e "2) ${YELLOW}Usuário${NC} (Apenas para você - Não requer senha)"
+echo -e "1) ${YELLOW}Sistema${NC} (Global - Requer sudo)"
+echo -e "2) ${YELLOW}Usuário${NC} (Apenas seu login - Sem sudo)"
 read -p "Escolha uma opção [1-2]: " OPC_MODO
 
 case $OPC_MODO in
-    1) MODE_FLAG="--system"; SUDO_CMD="sudo"; echo -e "\n📡 Modo Sistema selecionado.";;
-    *) MODE_FLAG="--user"; SUDO_CMD=""; echo -e "\n📡 Modo Usuário selecionado.";;
+    1) MODE_FLAG="--system"; SUDO_CMD="sudo"; CACHE_PATH="/var/lib/flatpak/appstream/local-master"; echo -e "\n📡 Modo Sistema selecionado.";;
+    *) MODE_FLAG="--user"; SUDO_CMD=""; CACHE_PATH="$HOME/.local/share/flatpak/appstream/local-master"; echo -e "\n📡 Modo Usuário selecionado.";;
 esac
 
 # 2. TESTE DE CONEXÃO
 echo -e "${BLUE}🔍 Verificando servidor em http://$SERVER_IP:$PORT_MASTER...${NC}"
 if ! curl -s --connect-timeout 3 "http://$SERVER_IP:$PORT_MASTER" > /dev/null; then
     echo -e "${RED}❌ ERRO: Servidor não encontrado!${NC}"
-    echo -e "Certifique-se que o PC do Gustavo está com o './server.sh' rodando."
+    echo -e "Certifique-se que o computador principal está com o './server.sh' rodando."
     exit 1
 fi
 
-# 3. CONFIGURAR O REPOSITÓRIO
-echo -e "⭐ Adicionando Mirror Local (local-master)..."
+# 3. LIMPEZA PROFUNDA (Anti-Cache)
+echo -ne "🧹 Limpando configurações e caches antigos... "
+$SUDO_CMD flatpak remote-delete $MODE_FLAG local-master --force 2>/dev/null || true
+$SUDO_CMD rm -rf "$CACHE_PATH" 2>/dev/null
+echo -e "${GREEN}OK${NC}"
 
-# Remove versões antigas para garantir uma instalação limpa
-$SUDO_CMD flatpak remote-delete $MODE_FLAG local-master 2>/dev/null || true
+# 4. CONFIGURAR O REPOSITÓRIO
+echo -e "⭐ Conectando ao Mirror Local (local-master)..."
+REPO_URL="http://$SERVER_IP:$PORT_MASTER/ostree-repo-full"
 
-# Adiciona o repositório apontando para a pasta correta do ostree
-if $SUDO_CMD flatpak remote-add $MODE_FLAG --if-not-exists --no-gpg-verify local-master "http://$SERVER_IP:$PORT_MASTER/ostree-repo-full"; then
+if $SUDO_CMD flatpak remote-add $MODE_FLAG --if-not-exists --no-gpg-verify local-master "$REPO_URL"; then
     
-    # Ajuste de Prioridade (Tenta os dois métodos para evitar o erro de opção desconhecida)
-    $SUDO_CMD flatpak remote-modify $MODE_FLAG --priority=99 local-master 2>/dev/null || \
-    $SUDO_CMD flatpak remote-modify $MODE_FLAG --set priority=99 local-master 2>/dev/null
+    # 5. AJUSTE DE PRIORIDADES (O SEGREDO DO SUCESSO)
+    # No Flatpak, a menor prioridade (1) ganha. 
+    echo -ne "🔝 Definindo local-master como favorito... "
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --priority 1 local-master 2>/dev/null || \
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --set priority=1 local-master 2>/dev/null
     
-    # Ajuste de Visibilidade na Loja (Gnome Software/Discover)
+    # Empurra o Flathub e Zorin para o final da fila (99)
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --priority 99 flathub 2>/dev/null || \
+    $SUDO_CMD flatpak remote-modify $MODE_FLAG --set priority=99 flathub 2>/dev/null
+    echo -e "${GREEN}OK${NC}"
+    
+    # 6. SINCRONIZAÇÃO DO CATÁLOGO
+    echo -e "${BLUE}📦 Sincronizando catálogo de aplicativos (Isso pode demorar alguns segundos)...${NC}"
+    $SUDO_CMD flatpak update $MODE_FLAG --appstream local-master -y >/dev/null 2>&1 || true
+    
+    # Reparo silencioso para evitar refs quebradas
+    $SUDO_CMD flatpak repair $MODE_FLAG >/dev/null 2>&1 || true
+    
+    # Ajuste de Visibilidade (Enumeration)
     if [ -n "$ENUM_FLAG" ]; then
         $SUDO_CMD flatpak remote-modify $MODE_FLAG $ENUM_FLAG local-master 2>/dev/null || true
     fi
 
-    echo -e "\n${GREEN}✅ CONFIGURAÇÃO CONCLUÍDA COM SUCESSO!${NC}"
-    echo -e "Agora você pode instalar apps voando pela rede local."
+    echo -e "\n${GREEN}✅ TUDO PRONTO! SEU PC ESTÁ CONECTADO AO COMITENERD.${NC}"
+    echo -e "----------------------------------------------------------"
+    echo -e "💻 Comando para testar: ${YELLOW}flatpak remote-ls local-master${NC}"
+    echo -e "🚗 ${BLUE}ComiteNerd Tech: Tecnologia robusta, mesmo offline!${NC}"
+    echo -e "----------------------------------------------------------"
+
+    # [NOVO] Tenta abrir a vitrine no navegador se houver interface gráfica
+    if command -v xdg-open > /dev/null && [ -n "$DISPLAY" ]; then
+        echo -e "🚀 Abrindo a vitrine de aplicativos... "
+        # Se for root, tenta abrir como o usuário que está na sessão atual
+        if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+            (sleep 2 && sudo -u "$SUDO_USER" xdg-open "http://$SERVER_IP:8080/index.html") &
+        else
+            (sleep 2 && xdg-open "http://$SERVER_IP:8080/index.html") &
+        fi
+    else
+        echo -e "💡 Acesse a vitrine manualmente em: ${CYAN}http://$SERVER_IP:8080/index.html${NC}"
+    fi
 else
     echo -e "${RED}❌ FALHA CRÍTICA: Não foi possível adicionar o repositório.${NC}"
     exit 1
@@ -287,7 +326,7 @@ show_progress() {
         
         tput cup 0 0
         echo -e "${BLUE}==========================================================${NC}"
-        echo -e "   🚀 FLATPAK MIRROR MANAGER | v1.0"
+        echo -e "   🚀 FLATPAK MIRROR MANAGER | v1.1"
         echo -e "${BLUE}==========================================================${NC}"
         echo -e "📊 Progresso: $done / $total | ⏱️ Ativo: ${elapsed}s"
         echo -e "📂 Espaço em uso (Trabalho): ${YELLOW}$root_size${NC} / ${MAX_ALLOWED_GB}GB"
