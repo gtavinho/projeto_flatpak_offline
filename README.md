@@ -1,6 +1,6 @@
 # 🚀 Flatpak Local Mirror Manager (Edição ComiteNerd)
 
-Este ecossistema de scripts transforma seu PC (ou aquele seu **Santana Tech** com HD de 750GB) em um poderoso **Servidor de Aplicativos Local**. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), funcionando até **100% Offline**, economizando largura de banda e acelerando instalações em até 100x.
+Este ecossistema de scripts transforma seu PC (ou aquele seu **ComiteNerd Tech** com HD de 750GB) em um poderoso **Servidor de Aplicativos Local**. Ele permite baixar aplicações Flatpak uma única vez da internet e distribuí-las para vários computadores em uma rede local (LAN), funcionando até **100% Offline**, economizando largura de banda e acelerando instalações em até 100x.
 
 **Cenário Ideal:** Lares ou escritórios com múltiplos PCs Linux (Zorin OS, Mint, Ubuntu) e conexões de internet limitadas ou que desejam performance máxima na rede interna.
 
@@ -27,7 +27,7 @@ Diferente de soluções profissionais complexas, este projeto foca na **simplici
 | **Manutenção** | Comandos complexos. | **Scripts Dedicados:** Limpeza e integridade em um clique. |
 
 > [!WARNING]
-> **AVISO DE PERFORMANCE:** O download paralelo usa intensamente o disco. Para discos rígidos comuns (HDDs de 5400/7200 RPM como o de 750GB do Santana), recomenda-se o uso de **1 a 2 threads (slots)** no `config.env` para evitar gargalos e travamentos no sistema hospedeiro.
+> **AVISO DE PERFORMANCE:** O download paralelo usa intensamente o disco. Para discos rígidos comuns (HDDs de 5400/7200 RPM como o de 750GB do ComiteNerd), recomenda-se o uso de **1 a 2 threads (slots)** no `config.env` para evitar gargalos e travamentos no sistema hospedeiro.
 
 <img width="822" height="300" alt="Dashboard do Mirror" src="https://github.com/user-attachments/assets/0894a7a5-22e5-4b83-b20f-003a692547d7" />
 
