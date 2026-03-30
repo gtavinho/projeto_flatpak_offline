@@ -12,6 +12,7 @@ O grande diferencial desta edição é a **Vitrine Automática**. Ao rodar o ser
 * **Navegação Visual:** Veja os ícones e nomes dos apps já espelhados no seu HD.
 * **Instalação de Um Clique:** A vitrine gera o comando de instalação exato para o usuário.
 * **Auto-Configuração:** Um único comando configura o PC do cliente, limpa caches antigos, ajusta prioridades e abre a loja no navegador.
+<img width="1085" height="943" alt="image" src="https://github.com/user-attachments/assets/97709aaf-a252-4c57-9b39-3f7779f0a278" />
 
 ---
 
@@ -32,11 +33,6 @@ Diferente de soluções profissionais complexas, este projeto foca na **simplici
 <img width="822" height="300" alt="Dashboard do Mirror" src="https://github.com/user-attachments/assets/0894a7a5-22e5-4b83-b20f-003a692547d7" />
 
 **ATENÇÃO: o download pode usar todos os recursos do SSD provocando gargalos e travamentos durante o download. Use de 1 a 2 threads (slots) para discos comuns.**
-
-<img width="822" height="300" alt="image" src="https://github.com/user-attachments/assets/0894a7a5-22e5-4b83-b20f-003a692547d7" />
-
-$\color{red}{\text{Evite discos com péssima qualidade!}}$
-
 ---
 
 ## 📋 Sumário
