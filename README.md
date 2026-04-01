@@ -6,7 +6,7 @@ Este ecossistema de scripts transforma seu PC (ou aquele seu **ComiteNerd Tech**
 
 ---
 
-## 🏬 A "Loja" ComiteNerd (Vitrine Web)
+## 🏬 A Vitrine Offline
 O grande diferencial desta edição é a **Vitrine Automática**. Ao rodar o servidor, ele gera uma interface visual para que qualquer pessoa na rede possa escolher e instalar apps sem digitar comandos complexos.
 
 * **Navegação Visual:** Veja os ícones e nomes dos apps já espelhados no seu HD.
